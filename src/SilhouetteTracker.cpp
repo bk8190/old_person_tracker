@@ -107,18 +107,29 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 
 	nh_.param<int>("canny/low_threshold", lowThreshold, 50);
 	nh_.param<int>("canny/ratio"        , ratio       , 3 );
-	nh_.setParam("canny/ratio", 2);
+//	nh_.setParam("canny/ratio", 2);
 	ROS_INFO("Low threshold=%d Ratio=%d",lowThreshold, ratio);
-
-	cv::blur(img_8bit, detected_edges, cv::Size(3,3));
+	
+	int scale = 1;
+	int delta = 0;
+	int ddepth = CV_8U;
+	cv::Mat grad_x, grad_y, abs_grad_x, abs_grad_y, grad;
+	cv::Sobel(img_8bit, grad_x, ddepth, 1, 0, 3, scale, delta, cv::BORDER_DEFAULT);
+	cv::Sobel(img_8bit, grad_y, ddepth, 1, 1, 3, scale, delta, cv::BORDER_DEFAULT);
+  cv::convertScaleAbs( grad_x, abs_grad_x );
+  cv::convertScaleAbs( grad_y, abs_grad_y );
+	
+  /// Total Gradient (approximate)
+  cv::addWeighted( abs_grad_x, 0.5, abs_grad_y, 0.5, 0, grad );
+	
+	/*cv::GaussianBlur(img_8bit, detected_edges, cv::Size(7,7), 3.0, 3.0);
 	int kernel_size = 5;
 	cv::Canny(detected_edges, detected_edges, lowThreshold, lowThreshold*ratio, kernel_size);
-
 	// Copy the detected edges to a new image, dst
 	cv::Mat dst;
 	dst.create(img_8bit.size(), img_8bit.type());
 	dst = cv::Scalar::all(0);
-	img_8bit.copyTo(dst, detected_edges);
+	img_8bit.copyTo(dst, detected_edges);*/
 
 	//cv::minMaxLoc(cv_ptr->image, &minval, &maxval, &minloc, &maxloc);
 
@@ -127,7 +138,7 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	// Convert to a fixed point image
 
 	cv::imshow(WINDOW, img_8bit);
-	cv::imshow(WINDOW_EDGES, dst);
+	cv::imshow(WINDOW_EDGES, grad);
 	cv::waitKey(3);
   image_pub_.publish(image_msg);
 }

@@ -10,7 +10,6 @@
 
 	</node>
 
-
-		<param name="silhouette_tracker/canny/low_threshold" value="40"/>
+		<param name="silhouette_tracker/canny/low_threshold" value="60"/>
 		<param name="silhouette_tracker/canny/ratio" value="3"/>
 </launch>
