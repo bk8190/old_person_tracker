@@ -19,10 +19,13 @@
 #include <opencv2/highgui/highgui.hpp>
 
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
+static const char WINDOW[] = "Image window";
+
 
 class SilhouetteTracker
 {
 	public:
+		int var_;
 		ros::NodeHandle nh_;
 		image_transport::ImageTransport it_;
 
@@ -31,7 +34,11 @@ class SilhouetteTracker
 
 		message_filters::Subscriber<PointCloudXYZRGB> cloud_sub_;
 	
-		SilhouetteTracker();
+		SilhouetteTracker(int var);
+		~SilhouetteTracker()
+		{
+			cv::destroyWindow(WINDOW);
+		}
 
 	private:
 		void bothCB(const sensor_msgs::ImageConstPtr& image_msg,
@@ -42,22 +49,45 @@ class SilhouetteTracker
 };
 
 
-SilhouetteTracker::SilhouetteTracker() : 
+SilhouetteTracker::SilhouetteTracker(int var) : 
 	it_(nh_),
 	image_sub_( it_, "in_image", 1 ),
 	cloud_sub_( nh_, "in_cloud", 1 ),
 	sync_( MySyncPolicy(10), image_sub_, cloud_sub_ )
 {
+	var_ = var;
 	// publisher for the image
   image_pub_ = it_.advertise(nh_.resolveName("out_image"), 1);
 	sync_.registerCallback( boost::bind( &SilhouetteTracker::bothCB, this, _1, _2) );
+	cv::namedWindow(WINDOW);
+	ROS_INFO("Silhouette tracker constructor finished");
 }
+
 
 void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg, 
                          const PointCloudXYZRGB::ConstPtr& cloud_msg)
 {
 	// Publish the data and wait to enforce rate
-	ROS_INFO("Silhouette tracker got data");
+	//ROS_WARN("Silhouette tracker got data, image format %s", image_msg->encoding.c_str());
+	ROS_WARN("Silhouette tracker got data");
+
+	cv_bridge::CvImagePtr cv_ptr;
+	try
+	{
+		cv_ptr = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::TYPE_32FC1);
+	}
+	catch (cv_bridge::Exception& e)
+	{
+		ROS_ERROR("cv_bridge exception: %s", e.what());
+	return;
+	}
+
+	if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
+		cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
+
+	cv::imshow(WINDOW, cv_ptr->image);
+	cv::waitKey(3);
+
 
   image_pub_.publish(image_msg);
 }
@@ -66,8 +96,8 @@ int main (int argc, char** argv)
 {
   // Initialize ROS
   ros::init (argc, argv, "silhouette_tracker");
-	ROS_INFO("Initializing silhouette tracker.");
-	SilhouetteTracker st();
+	SilhouetteTracker st(3);
+	ROS_INFO("Initialization done.");
   ros::spin();
 	return(0);
 }

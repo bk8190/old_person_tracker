@@ -70,6 +70,7 @@ RateLimiter::RateLimiter(int sleep_time) :
 	cam_info_pub_ = nh_.advertise<sensor_msgs::CameraInfo> (cam_info_topic, 1);
 
 	sync_.registerCallback( boost::bind( &RateLimiter::bothCB, this, _1, _2, _3) );
+	ROS_INFO("RateLimiter constructor finished");
 }
 
 void RateLimiter::bothCB(const sensor_msgs::ImageConstPtr& image_msg, 
