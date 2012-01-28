@@ -1,5 +1,3 @@
-
-
 #include <ros/ros.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <message_filters/subscriber.h>
@@ -51,13 +49,16 @@ class SilhouetteTracker
 
 SilhouetteTracker::SilhouetteTracker(int var) : 
 	it_(nh_),
-	image_sub_( it_, "in_image", 1 ),
-	cloud_sub_( nh_, "in_cloud", 1 ),
-	sync_( MySyncPolicy(10), image_sub_, cloud_sub_ )
+//	image_sub_( it_, "in_image", 1 ),
+//	cloud_sub_( nh_, "in_cloud", 1 ),
+	image_sub_( it_, "/camera/depth_registered/image_rect", 1),
+	cloud_sub_( nh_, "/camera/depth_registered/points", 1 ),
+	sync_( MySyncPolicy(2), image_sub_, cloud_sub_ )
 {
-	var_ = var;
 	// publisher for the image
-  image_pub_ = it_.advertise(nh_.resolveName("out_image"), 1);
+	std::string image_topic = nh_.resolveName("out_image");
+  image_pub_ = it_.advertise(image_topic, 1);
+
 	sync_.registerCallback( boost::bind( &SilhouetteTracker::bothCB, this, _1, _2) );
 	cv::namedWindow(WINDOW);
 	ROS_INFO("Silhouette tracker constructor finished");
@@ -65,11 +66,9 @@ SilhouetteTracker::SilhouetteTracker(int var) :
 
 
 void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg, 
-                         const PointCloudXYZRGB::ConstPtr& cloud_msg)
+                               const PointCloudXYZRGB::ConstPtr& cloud_msg)
 {
-	// Publish the data and wait to enforce rate
-	//ROS_WARN("Silhouette tracker got data, image format %s", image_msg->encoding.c_str());
-	ROS_WARN("Silhouette tracker got data");
+	ROS_WARN("Silhouette tracker got data, image format %s", image_msg->encoding.c_str());
 
 	cv_bridge::CvImagePtr cv_ptr;
 	try
@@ -82,13 +81,11 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	return;
 	}
 
-	if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
-		cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
+	//if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
+	//	cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
 
 	cv::imshow(WINDOW, cv_ptr->image);
 	cv::waitKey(3);
-
-
   image_pub_.publish(image_msg);
 }
 

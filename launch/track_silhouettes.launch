@@ -5,7 +5,7 @@
 	<include file="$(find person_tracker)/playback_data.launch" />
 
 	<node pkg="person_tracker" type="silhouette_tracker" name="silhouette_tracker_node" >
-		<remap from="in_image" to="/camera/depth_registered/image_rect"/>
-		<remap from="in_cloud" to="/camera/depth_registered/cloud"/>
+		<!--remap from="in_image" to="/camera/depth_registered/image_rect"/-->
+		<!--remap from="in_cloud" to="/camera/depth_registered/points"/-->
 	</node>
 </launch>

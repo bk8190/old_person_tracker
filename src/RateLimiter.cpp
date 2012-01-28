@@ -1,5 +1,3 @@
-
-
 #include <ros/ros.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <message_filters/subscriber.h>
