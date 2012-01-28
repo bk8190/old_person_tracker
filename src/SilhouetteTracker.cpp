@@ -15,9 +15,13 @@
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
 #include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+
+#define MAX_DIST (7.0)
 
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 static const char WINDOW[] = "Image window";
+static const char WINDOW_EDGES[] = "Edges";
 
 
 class SilhouetteTracker
@@ -36,6 +40,7 @@ class SilhouetteTracker
 		~SilhouetteTracker()
 		{
 			cv::destroyWindow(WINDOW);
+			cv::destroyWindow(WINDOW_EDGES);
 		}
 
 	private:
@@ -48,6 +53,7 @@ class SilhouetteTracker
 
 
 SilhouetteTracker::SilhouetteTracker(int var) : 
+	nh_("silhouette_tracker"),	
 	it_(nh_),
 //	image_sub_( it_, "in_image", 1 ),
 //	cloud_sub_( nh_, "in_cloud", 1 ),
@@ -61,6 +67,7 @@ SilhouetteTracker::SilhouetteTracker(int var) :
 
 	sync_.registerCallback( boost::bind( &SilhouetteTracker::bothCB, this, _1, _2) );
 	cv::namedWindow(WINDOW);
+	cv::namedWindow(WINDOW_EDGES);
 	ROS_INFO("Silhouette tracker constructor finished");
 }
 
@@ -84,7 +91,43 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	//if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
 	//	cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
 
-	cv::imshow(WINDOW, cv_ptr->image);
+	double minval, maxval;
+	cv::Point minloc, maxloc;
+
+	// Convert the depth image into 8-bit for edge detection, scaling by 255/MAX_DIST
+	cv::Mat img_8bit;
+	cv_ptr->image.convertTo(img_8bit, CV_8U, 255/((double)MAX_DIST), 0);
+
+	cv::Mat src_blurred, detected_edges;
+
+	//cv::medianBlur( img_8bit, detected_edges, 3 );
+
+	int lowThreshold;
+	int ratio;
+
+	nh_.param<int>("canny/low_threshold", lowThreshold, 50);
+	nh_.param<int>("canny/ratio"        , ratio       , 3 );
+	nh_.setParam("canny/ratio", 2);
+	ROS_INFO("Low threshold=%d Ratio=%d",lowThreshold, ratio);
+
+	cv::blur(img_8bit, detected_edges, cv::Size(3,3));
+	int kernel_size = 5;
+	cv::Canny(detected_edges, detected_edges, lowThreshold, lowThreshold*ratio, kernel_size);
+
+	// Copy the detected edges to a new image, dst
+	cv::Mat dst;
+	dst.create(img_8bit.size(), img_8bit.type());
+	dst = cv::Scalar::all(0);
+	img_8bit.copyTo(dst, detected_edges);
+
+	//cv::minMaxLoc(cv_ptr->image, &minval, &maxval, &minloc, &maxloc);
+
+	//ROS_INFO("Max element = %f, min = %f", maxval, minval);
+
+	// Convert to a fixed point image
+
+	cv::imshow(WINDOW, img_8bit);
+	cv::imshow(WINDOW_EDGES, dst);
 	cv::waitKey(3);
   image_pub_.publish(image_msg);
 }
