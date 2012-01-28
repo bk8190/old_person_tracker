@@ -1,89 +1,73 @@
+
+
 #include <ros/ros.h>
-#include <sensor_msgs/PointCloud2.h>
-// PCL specific includes
+#include <sensor_msgs/CameraInfo.h>
+#include <message_filters/subscriber.h>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/sync_policies/exact_time.h>
+// PCL includes
+#include "pcl_ros/point_cloud.h"
 #include <pcl/ros/conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+// OpenCV includes
+#include <image_transport/image_transport.h>
+#include <image_transport/subscriber_filter.h>
+#include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/image_encodings.h>
+#include <opencv2/highgui/highgui.hpp>
 
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
-namespace enc = sensor_msgs::image_encodings;
-static const char WINDOW[] = "Image window";
-// /camera/depth_registered/points /camera/depth_registered/image_rect
+
 class SilhouetteTracker
 {
 	public:
 		ros::NodeHandle nh_;
 		image_transport::ImageTransport it_;
 
-  	image_transport::Subscriber image_sub_;
-		ros::Subscriber cloud_sub_;
-		ros::Publisher  cloud_pub_;
+		image_transport::SubscriberFilter image_sub_;
+  	image_transport::Publisher  image_pub_;
 
-	public SilhouetteTracker() : it_(nh_)
-	{
-
-    image_sub_ = it_.subscribe("in_image", 1, &SilhouetteTracker::imageCb, this);
-
-
-		// Create a ROS subscriber for the input point cloud
-		cloud_sub_ = nh.subscribe<PointCloudXYZRGB> ("in_cloud", 1, cloud_cb);
-
-		// Create a ROS publisher for the output point cloud
-		std::string cloud_topic = nh.resolveName("out_cloud");
-		cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2> (cloud_topic, 1);
-
-    cv::namedWindow(WINDOW);
-	}
-
-  ~SilhouetteTracker()
-  {
-    cv::destroyWindow(WINDOW);
-  }
+		message_filters::Subscriber<PointCloudXYZRGB> cloud_sub_;
+	
+		SilhouetteTracker();
 
 	private:
-		void imageCb(const sensor_msgs::ImageConstPtr& msg);
-		void cloud_cb(const PointCloudXYZRGB::ConstPtr& cloud_msg);
+		void bothCB(const sensor_msgs::ImageConstPtr& image_msg,
+                const PointCloudXYZRGB::ConstPtr& cloud_msg);
+
+		typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image, PointCloudXYZRGB> MySyncPolicy;
+		message_filters::Synchronizer< MySyncPolicy > sync_;
 };
 
-void SilhouetteTracker::imageCb(const sensor_msgs::ImageConstPtr& msg)
+
+SilhouetteTracker::SilhouetteTracker() : 
+	it_(nh_),
+	image_sub_( it_, "in_image", 1 ),
+	cloud_sub_( nh_, "in_cloud", 1 ),
+	sync_( MySyncPolicy(10), image_sub_, cloud_sub_ )
 {
-  cv_bridge::CvImagePtr cv_ptr;
-  try
-  {
-    cv_ptr = cv_bridge::toCvCopy(msg, enc::BGR8);
-  }
-  catch (cv_bridge::Exception& e)
-  {
-    ROS_ERROR("cv_bridge exception: %s", e.what());
-    return;
-  }
-
-  if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
-    cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
-
-  cv::imshow(WINDOW, cv_ptr->image);
-  cv::waitKey(3);
-  
-  image_pub_.publish(cv_ptr->toImageMsg());
+	// publisher for the image
+  image_pub_ = it_.advertise(nh_.resolveName("out_image"), 1);
+	sync_.registerCallback( boost::bind( &SilhouetteTracker::bothCB, this, _1, _2) );
 }
 
-
-void SilhouetteTracker::cloud_cb(const PointCloudXYZRGB::ConstPtr& cloud_msg);
+void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg, 
+                         const PointCloudXYZRGB::ConstPtr& cloud_msg)
 {
-	// ... do data processing
+	// Publish the data and wait to enforce rate
+	ROS_INFO("Silhouette tracker got data");
 
-	sensor_msgs::PointCloud2 output;
-	// Publish the data
-	pub.publish (output);
+  image_pub_.publish(image_msg);
 }
-
 
 int main (int argc, char** argv)
 {
   // Initialize ROS
-  ros::init (argc, argv, "my_pcl_tutorial");
-
-	SilhouetteTracker st;
-  ros::spin ();
+  ros::init (argc, argv, "silhouette_tracker");
+	ROS_INFO("Initializing silhouette tracker.");
+	SilhouetteTracker st();
+  ros::spin();
 	return(0);
 }

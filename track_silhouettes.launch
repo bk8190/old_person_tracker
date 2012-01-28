@@ -1,0 +1,10 @@
+<launch>
+
+	<!-- Kinect driver -->
+	<!--include file="$(find openni_launch)/launch/openni.launch" /-->
+
+	<include file="$(find person_tracker)/playback_data.launch" />
+
+	<node pkg="person_tracker" type="silhouette_tracker" name="silhouette_tracker">
+	</node>
+</launch>
