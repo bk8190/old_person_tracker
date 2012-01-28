@@ -21,7 +21,8 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 #uncomment if you have defined services
 #rosbuild_gensrv()
 
-rosbuild_add_executable(silhouette_tracker src/SilhouetteTracker.cpp)
+#rosbuild_add_executable(silhouette_tracker src/SilhouetteTracker.cpp)
+rosbuild_add_executable(rate_limiter src/RateLimiter.cpp)
 
 #common commands for building c++ executables and libraries
 #rosbuild_add_library(${PROJECT_NAME} src/example.cpp)

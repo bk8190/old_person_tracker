@@ -8,7 +8,7 @@
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 namespace enc = sensor_msgs::image_encodings;
 static const char WINDOW[] = "Image window";
-
+// /camera/depth_registered/points /camera/depth_registered/image_rect
 class SilhouetteTracker
 {
 	public:
