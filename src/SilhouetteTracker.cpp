@@ -18,12 +18,20 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/ml/ml.hpp>
 
+#include <fstream>
+#include <stdlib.h>
+#include <stdio.h>
+
 #define MAX_DIST (7.0)
 
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 static const char WINDOW[] = "Image window";
 static const char WINDOW_EDGES[] = "Edges";
 static const char WINDOW_HIST[] = "Histogram";
+
+using std::cout;
+using std::endl;
+using std::string;
 
 
 void doHistogram(const cv::Mat& image, cv::Mat& hist, cv::Mat& hist_image);
@@ -78,6 +86,7 @@ SilhouetteTracker::SilhouetteTracker(int var) :
 	ROS_INFO("Silhouette tracker constructor finished");
 }
 
+int _filenum = 0;
 
 void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg, 
                                const PointCloudXYZRGB::ConstPtr& cloud_msg)
@@ -98,17 +107,28 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	//if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
 	//	cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
 
-	cv::Mat img_blur;
-	cv::medianBlur( cv_ptr->image, img_blur, 5 );
+	//cv::Mat img_blur;
+	//cv::medianBlur( cv_ptr->image, img_blur, 5 );
 
+	string filename("capture_01_30_");
+	std::stringstream out;
+	out << ++_filenum;
+	filename += out.str();
 
+	cout << filename << endl;
 
-	cv::Mat hist;
-	cv::Mat histImage;
-	doHistogram(img_blur/MAX_DIST, hist, histImage);
+	std::ofstream myfile;
+	myfile.open(filename.c_str());
+	myfile << format(cv_ptr->image, "csv");
+	myfile.close();
+	cout << "Done!\n";
+
+	//cv::Mat hist;
+	//cv::Mat histImage;
+	//doHistogram(img_blur/MAX_DIST, hist, histImage);
 	
-	CvEM model;
-	doEM(img_blur, model, 10);
+	//CvEM model;
+	//doEM(img_blur/MAX_DIST, model, 10);
 
 /*
 
@@ -158,12 +178,12 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 
 	// Convert to a fixed point image
 
-	cv::imshow(WINDOW, cv_ptr->image/MAX_DIST);
+	//cv::imshow(WINDOW, cv_ptr->image/MAX_DIST);
 //	cv::imshow(WINDOW_EDGES, histImage);
-	cv::imshow(WINDOW_HIST, histImage);
+	//cv::imshow(WINDOW_HIST, histImage);
 	cv::waitKey(3);
 
-  image_pub_.publish(image_msg);
+  //image_pub_.publish(image_msg);
 }
 
 
@@ -195,43 +215,48 @@ void doHistogram(const cv::Mat& image, cv::Mat& hist, cv::Mat& hist_image)
 
 void doEM(const cv::Mat& image, CvEM& model, int num_clusters)
 {
-//	CvEMParams params(num_clusters);
-	CvEMParams params(2);
+	num_clusters = 5;
+	int nd = 1;
 	cv::Mat tempmat;
 
 	
 	// Take a subset of the image for training
-	cv::Mat samples;
-	resize(image, samples, cv::Size(6,6));
+	cv::Mat samples = image.clone();
+	resize(samples, samples, cv::Size(4,4));
 	int nsamples = samples.rows*samples.cols;
 
-	samples = samples.reshape(1,nsamples);
+	samples = samples.reshape(1,nsamples/nd);
 	cv::Mat training_set = samples.clone();
+
+	// Get rid of NANs
+	for( int i=0; i<nsamples; i++ ){
+		if( cvIsNaN(training_set.at<float>(i)) ){
+			training_set.at<float>(i) = 1.0;
+			ROS_INFO("Corrected NAN");
+		}
+	}
 
 	cv::Mat labels(nsamples, 1, CV_32SC1);
 
-	ROS_INFO("%d samples",nsamples);
-    if(image.type() != CV_32FC1 ){
-			ROS_ERROR("Bad image");
-		}
-    if(samples.type() != CV_32FC1 ){
-			ROS_ERROR("Bad samples");
-		}
-    if(training_set.type() != CV_32FC1 ){
-			ROS_ERROR("Bad training set");
-		}
-
+	ROS_INFO("%d samples",nsamples/nd);
 	ROS_INFO("Image    size (%d,%d)", image.rows, image.cols); 
 	ROS_INFO("Sample   size (%d,%d)", samples.rows, samples.cols); 
-	ROS_INFO("Training size (%d,%d)", training_set.rows, training_set.cols); 
-	model.train(training_set);//, tempmat, params, &labels);//, tempmat, params, &labels);
+
+	cv::TermCriteria criteria(cv::TermCriteria::MAX_ITER + cv::TermCriteria::EPS, 400, .0001);
+	int attempts = 5;
+	int flags = cv::KMEANS_PP_CENTERS;
+	cv::Mat means(num_clusters, nd, CV_32FC1);
+
+	ROS_INFO("Kmeans: %lf",kmeans(training_set, num_clusters, labels, criteria, attempts, flags, means));
+
 	ROS_WARN("Training Done");
 	
-	cv::Mat means = model.getMeans();
+	ROS_INFO("Lbls  size (%d,%d)", labels.rows, labels.cols);
 	ROS_INFO("Means size (%d,%d)", means.rows, means.cols);
-	for(int i=0; i<num_clusters; i++)
-	{
-		ROS_INFO("mean %d = %f", i, means.at<float>(1,i));
+	std::cout << "centers: " << means << std::endl;
+
+	for( int i=0; i<nsamples; i++ ){
+		std::cout << training_set.at<float>(i) << " -> " << labels.at<int>(i) << std::endl;
 	}
 }
 
