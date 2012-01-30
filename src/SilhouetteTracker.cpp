@@ -16,6 +16,7 @@
 #include <sensor_msgs/image_encodings.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/ml/ml.hpp>
 
 #define MAX_DIST (7.0)
 
@@ -24,6 +25,9 @@ static const char WINDOW[] = "Image window";
 static const char WINDOW_EDGES[] = "Edges";
 static const char WINDOW_HIST[] = "Histogram";
 
+
+void doHistogram(const cv::Mat& image, cv::Mat& hist, cv::Mat& hist_image);
+void doEM(const cv::Mat& image, CvEM& model, int num_clusters);
 
 class SilhouetteTracker
 {
@@ -97,29 +101,14 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	cv::Mat img_blur;
 	cv::medianBlur( cv_ptr->image, img_blur, 5 );
 
-	/* Draw a histogram */
-	int histSize = 50;
-	float range[] = {0.0, MAX_DIST};
-	const float* histRange[] = {range};
-	cv::Mat hist;
-	cv::calcHist( &img_blur, 1, 0, cv::Mat() , hist, 1, &histSize, histRange, true, false );
-	int hist_w = 400, hist_h = 400;
-	int bin_w = cvRound( (double) hist_w/histSize );
-	cv::Mat histImage( hist_w, hist_h, CV_8UC3, cv::Scalar( 0,0,0) );
-	/// Normalize the result
-	hist /= norm(hist, cv::NORM_L1);
 
-	float sum=0;
-	for( int i = 1; i < histSize; i++ )
-	{
-		//ROS_INFO("%d: %f",i,hist.at<float>(i-1));
-		sum += hist.at<float>(i);
-		line( histImage, cv::Point( bin_w*(i-1), hist_h-cvRound(hist_h*hist.at<float>(i-1)) ) ,
-		                 cv::Point( bin_w*(i)  , hist_h-cvRound(hist_h*hist.at<float>(i  )) ),
-		                 cv::Scalar( 0, 0, 255), 2, 8, 0  );
-	}
-	//ROS_INFO("Sum = %f", sum);
+
+	cv::Mat hist;
+	cv::Mat histImage;
+	doHistogram(img_blur/MAX_DIST, hist, histImage);
 	
+	CvEM model;
+	doEM(img_blur, model, 10);
 
 /*
 
@@ -176,6 +165,76 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 
   image_pub_.publish(image_msg);
 }
+
+
+void doHistogram(const cv::Mat& image, cv::Mat& hist, cv::Mat& hist_image)
+{
+
+	/* Draw a histogram */
+	int histSize = 50;
+	float range[] = {0.0, 1};
+	const float* histRange[] = {range};
+	cv::calcHist( &image, 1, 0, cv::Mat() , hist, 1, &histSize, histRange, true, false );
+	/// Normalize the result
+	hist /= norm(hist, cv::NORM_L1);
+
+	int hist_w = 400, hist_h = 400;
+	int bin_w = cvRound( (double) hist_w/histSize );
+	float sum=0;
+	hist_image = cv::Mat( hist_w, hist_h, CV_8UC3, cv::Scalar( 0,0,0) );
+	for( int i = 1; i < histSize; i++ )
+	{
+		//ROS_INFO("%d: %f",i,hist.at<float>(i-1));
+		sum += hist.at<float>(i);
+		line( hist_image, cv::Point( bin_w*(i-1), hist_h-cvRound(hist_h*hist.at<float>(i-1)) ) ,
+		                 cv::Point( bin_w*(i)  , hist_h-cvRound(hist_h*hist.at<float>(i  )) ),
+		                 cv::Scalar( 0, 0, 255), 2, 8, 0  );
+	}
+	//ROS_INFO("Sum = %f", sum);
+}
+
+void doEM(const cv::Mat& image, CvEM& model, int num_clusters)
+{
+//	CvEMParams params(num_clusters);
+	CvEMParams params(2);
+	cv::Mat tempmat;
+
+	
+	// Take a subset of the image for training
+	cv::Mat samples;
+	resize(image, samples, cv::Size(6,6));
+	int nsamples = samples.rows*samples.cols;
+
+	samples = samples.reshape(1,nsamples);
+	cv::Mat training_set = samples.clone();
+
+	cv::Mat labels(nsamples, 1, CV_32SC1);
+
+	ROS_INFO("%d samples",nsamples);
+    if(image.type() != CV_32FC1 ){
+			ROS_ERROR("Bad image");
+		}
+    if(samples.type() != CV_32FC1 ){
+			ROS_ERROR("Bad samples");
+		}
+    if(training_set.type() != CV_32FC1 ){
+			ROS_ERROR("Bad training set");
+		}
+
+	ROS_INFO("Image    size (%d,%d)", image.rows, image.cols); 
+	ROS_INFO("Sample   size (%d,%d)", samples.rows, samples.cols); 
+	ROS_INFO("Training size (%d,%d)", training_set.rows, training_set.cols); 
+	model.train(training_set);//, tempmat, params, &labels);//, tempmat, params, &labels);
+	ROS_WARN("Training Done");
+	
+	cv::Mat means = model.getMeans();
+	ROS_INFO("Means size (%d,%d)", means.rows, means.cols);
+	for(int i=0; i<num_clusters; i++)
+	{
+		ROS_INFO("mean %d = %f", i, means.at<float>(1,i));
+	}
+}
+
 
 int main (int argc, char** argv)
 {
