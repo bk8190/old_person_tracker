@@ -94,31 +94,29 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	cv::Mat img_blur;
 	cv::medianBlur( cv_ptr->image, img_blur, 5 );
 
-	int bins = 40;
-	int histSize[] = {bins};
+	int histSize = 40;
 	float range[] = {0.0, MAX_DIST};
-	const float* ranges[] = {range};
-	cv::MatND hist;
-	int channels[] = {0};
+	const float* histRange[] = {range};
 
-	cv::calcHist( &img_blur, 1, channels, cv::Mat(), hist, 2, histSize, ranges,
-			true,
-			false );
+	cv::Mat hist;
 
-	double maxVal = 0;
-  cv::minMaxLoc(hist, 0, &maxVal, 0, 0);
-    int scale = 10;
-    cv::Mat histImg = cv::Mat::zeros(bins*scale, bins*10, CV_8UC3);
+	cv::calcHist( &img_blur, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, true, false );
 
-  for( int s = 0; s < bins; s++ )
-  {
-      float binVal = hist.at<float>(s);
-      int intensity = cvRound(binVal*255/maxVal);
-      cvRectangle( histImg, cv::Point(scale, s*scale),
-                   Point( (h+1)*scale - 1, (s+1)*scale - 1),
-                   Scalar::all(intensity),
-                   CV_FILLED );
-  }
+	int hist_w = 400; int hist_h = 400;
+	int bin_w = cvRound( (double) hist_w/histSize );
+
+	cv::Mat histImage( hist_w, hist_h, CV_8UC3, cv::Scalar( 0,0,0) );
+
+ /// Normalize the result to [ 0, histImage.rows ]
+ normalize(hist, hist, 0, histImage.rows, NORM_MINMAX, -1, cv::Mat() );
+
+ /// Draw for each channel
+ for( int i = 1; i < histSize; i++ )
+ {
+   line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(r_hist.at<float>(i-1)) ) ,
+                    cv::Point( bin_w*(i), hist_h - cvRound(r_hist.at<float>(i)) ),
+                    cv::Scalar( 0, 0, 255), 2, 8, 0  );
+	}
 /*
 	double minval, maxval;
 	cv::Point minloc, maxloc;
@@ -167,7 +165,7 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	// Convert to a fixed point image
 
 	cv::imshow(WINDOW, cv_ptr->image/MAX_DIST);
-	cv::imshow(WINDOW_EDGES, histImg);
+	cv::imshow(WINDOW_EDGES, histImage);
 	cv::waitKey(0);
 
   image_pub_.publish(image_msg);
