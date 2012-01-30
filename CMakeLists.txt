@@ -21,8 +21,20 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 #uncomment if you have defined services
 #rosbuild_gensrv()
 
+
+rosbuild_add_library(graphcutlib src/GMMGraphCutSegmentation/GCv2p3/GCoptimization.cpp src/GMMGraphCutSegmentation/GCv2p3/graph.cpp src/GMMGraphCutSegmentation/GCv2p3/maxflow.cpp src/GMMGraphCutSegmentation/GCv2p3/LinkedBlockList.cpp)
+rosbuild_add_compile_flags(graphcutlib -fpermissive)
+
 rosbuild_add_executable(silhouette_tracker src/SilhouetteTracker.cpp)
 rosbuild_add_executable(rate_limiter src/RateLimiter.cpp)
+
+#rosbuild_add_executable(graph_example src/GMMGraphCutSegmentation/GCv2p3/example.cpp)
+#target_link_libraries(graph_example graphcutlib)
+#rosbuild_add_compile_flags(graph_example -fpermissive)
+
+#rosbuild_add_executable(graphcut src/GMMGraphCutSegmentation/graphcut.cpp)
+#target_link_libraries(graphcut graphcutlib)
+
 
 #common commands for building c++ executables and libraries
 #rosbuild_add_library(${PROJECT_NAME} src/example.cpp)

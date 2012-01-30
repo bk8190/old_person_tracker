@@ -91,6 +91,35 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	//if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
 	//	cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
 
+	cv::Mat img_blur;
+	cv::medianBlur( cv_ptr->image, img_blur, 5 );
+
+	int bins = 40;
+	int histSize[] = {bins};
+	float range[] = {0.0, MAX_DIST};
+	const float* ranges[] = {range};
+	cv::MatND hist;
+	int channels[] = {0};
+
+	cv::calcHist( &img_blur, 1, channels, cv::Mat(), hist, 2, histSize, ranges,
+			true,
+			false );
+
+	double maxVal = 0;
+  cv::minMaxLoc(hist, 0, &maxVal, 0, 0);
+    int scale = 10;
+    cv::Mat histImg = cv::Mat::zeros(bins*scale, bins*10, CV_8UC3);
+
+  for( int s = 0; s < bins; s++ )
+  {
+      float binVal = hist.at<float>(s);
+      int intensity = cvRound(binVal*255/maxVal);
+      cvRectangle( histImg, cv::Point(scale, s*scale),
+                   Point( (h+1)*scale - 1, (s+1)*scale - 1),
+                   Scalar::all(intensity),
+                   CV_FILLED );
+  }
+/*
 	double minval, maxval;
 	cv::Point minloc, maxloc;
 
@@ -122,7 +151,7 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
   /// Total Gradient (approximate)
   cv::addWeighted( abs_grad_x, 0.5, abs_grad_y, 0.5, 0, grad );
 	
-	/*cv::GaussianBlur(img_8bit, detected_edges, cv::Size(7,7), 3.0, 3.0);
+	cv::GaussianBlur(img_8bit, detected_edges, cv::Size(7,7), 3.0, 3.0);
 	int kernel_size = 5;
 	cv::Canny(detected_edges, detected_edges, lowThreshold, lowThreshold*ratio, kernel_size);
 	// Copy the detected edges to a new image, dst
@@ -137,9 +166,10 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 
 	// Convert to a fixed point image
 
-	cv::imshow(WINDOW, img_8bit);
-	cv::imshow(WINDOW_EDGES, grad);
-	cv::waitKey(3);
+	cv::imshow(WINDOW, cv_ptr->image/MAX_DIST);
+	cv::imshow(WINDOW_EDGES, histImg);
+	cv::waitKey(0);
+
   image_pub_.publish(image_msg);
 }
 
