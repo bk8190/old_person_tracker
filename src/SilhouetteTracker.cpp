@@ -22,6 +22,7 @@
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloudXYZRGB;
 static const char WINDOW[] = "Image window";
 static const char WINDOW_EDGES[] = "Edges";
+static const char WINDOW_HIST[] = "Histogram";
 
 
 class SilhouetteTracker
@@ -41,6 +42,7 @@ class SilhouetteTracker
 		{
 			cv::destroyWindow(WINDOW);
 			cv::destroyWindow(WINDOW_EDGES);
+			cv::destroyWindow(WINDOW_HIST);
 		}
 
 	private:
@@ -68,6 +70,7 @@ SilhouetteTracker::SilhouetteTracker(int var) :
 	sync_.registerCallback( boost::bind( &SilhouetteTracker::bothCB, this, _1, _2) );
 	cv::namedWindow(WINDOW);
 	cv::namedWindow(WINDOW_EDGES);
+	cv::namedWindow(WINDOW_HIST);
 	ROS_INFO("Silhouette tracker constructor finished");
 }
 
@@ -94,30 +97,32 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	cv::Mat img_blur;
 	cv::medianBlur( cv_ptr->image, img_blur, 5 );
 
-	int histSize = 40;
+	/* Draw a histogram */
+	int histSize = 50;
 	float range[] = {0.0, MAX_DIST};
 	const float* histRange[] = {range};
-
 	cv::Mat hist;
-
-	cv::calcHist( &img_blur, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, true, false );
-
-	int hist_w = 400; int hist_h = 400;
+	cv::calcHist( &img_blur, 1, 0, cv::Mat() , hist, 1, &histSize, histRange, true, false );
+	int hist_w = 400, hist_h = 400;
 	int bin_w = cvRound( (double) hist_w/histSize );
-
 	cv::Mat histImage( hist_w, hist_h, CV_8UC3, cv::Scalar( 0,0,0) );
+	/// Normalize the result
+	hist /= norm(hist, cv::NORM_L1);
 
- /// Normalize the result to [ 0, histImage.rows ]
- normalize(hist, hist, 0, histImage.rows, NORM_MINMAX, -1, cv::Mat() );
-
- /// Draw for each channel
- for( int i = 1; i < histSize; i++ )
- {
-   line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(r_hist.at<float>(i-1)) ) ,
-                    cv::Point( bin_w*(i), hist_h - cvRound(r_hist.at<float>(i)) ),
-                    cv::Scalar( 0, 0, 255), 2, 8, 0  );
+	float sum=0;
+	for( int i = 1; i < histSize; i++ )
+	{
+		//ROS_INFO("%d: %f",i,hist.at<float>(i-1));
+		sum += hist.at<float>(i);
+		line( histImage, cv::Point( bin_w*(i-1), hist_h-cvRound(hist_h*hist.at<float>(i-1)) ) ,
+		                 cv::Point( bin_w*(i)  , hist_h-cvRound(hist_h*hist.at<float>(i  )) ),
+		                 cv::Scalar( 0, 0, 255), 2, 8, 0  );
 	}
+	//ROS_INFO("Sum = %f", sum);
+	
+
 /*
+
 	double minval, maxval;
 	cv::Point minloc, maxloc;
 
@@ -165,8 +170,9 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	// Convert to a fixed point image
 
 	cv::imshow(WINDOW, cv_ptr->image/MAX_DIST);
-	cv::imshow(WINDOW_EDGES, histImage);
-	cv::waitKey(0);
+//	cv::imshow(WINDOW_EDGES, histImage);
+	cv::imshow(WINDOW_HIST, histImage);
+	cv::waitKey(3);
 
   image_pub_.publish(image_msg);
 }
