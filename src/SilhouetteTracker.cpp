@@ -121,7 +121,7 @@ void SilhouetteTracker::bothCB(const sensor_msgs::ImageConstPtr& image_msg,
 	myfile.open(filename.c_str());
 	myfile << format(cv_ptr->image, "csv");
 	myfile.close();
-	cout << "Done!\n";
+	cout << "Done!\n"; 
 
 	//cv::Mat hist;
 	//cv::Mat histImage;
