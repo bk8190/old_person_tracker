@@ -20,6 +20,8 @@ GMDIST_FIGURE = 3;
 CLUSTERS_FIGURE = 4;
 GRAPHCUT_FIGURE = 5;
 GRAPHCUT_SPATIAL_FIGURE = 6;
+CORR_FIGURE = 7;
+CORR_FIGURE_2 = 8;
 
 PDF_APPROX_RESOLUTION = .03;
 PEAKS_MIN_DISTANCE = 5;
@@ -55,11 +57,11 @@ samples = imresize(img, .3, 'nearest');
 
 % Find peaks
 [~, peaklocs] = findpeaks(f, 'MINPEAKDISTANCE', PEAKS_MIN_DISTANCE);
+k = length(peaklocs);
 
 % Assume valleys are halfway between peaks
-npeaks = length(peaklocs);
-valleylocs = zeros(npeaks-1, 1, 'int32');
-for ipeak = 1:npeaks-1
+valleylocs = zeros(k-1, 1, 'int32');
+for ipeak = 1:k-1
     valleylocs(ipeak) = .5*(peaklocs(ipeak) + peaklocs(ipeak+1));
 end
 
@@ -95,16 +97,16 @@ hold off
 % Now, divide up the data and train gaussians to each peak.
 indices = 1:length(xi);
 
-mu    = zeros(npeaks, 1, 'single');
-sigma = zeros(1, 1, npeaks, 'single');
-p     = zeros(1, npeaks, 'single');
+mu    = zeros(k, 1, 'single');
+sigma = zeros(1, 1, k, 'single');
+p     = zeros(1, k, 'single');
 
 dx = xi(2)-xi(1);
-for igroup = 1:npeaks
+for igroup = 1:k
     % Get the data from this group (special cases for first and last)
     if igroup == 1
         group_indices = indices<=valleylocs(1);
-    elseif igroup == npeaks
+    elseif igroup == k
         group_indices = indices>valleylocs(end);
     else
         group_indices = indices>valleylocs(igroup-1) & indices<=valleylocs(igroup);
@@ -155,9 +157,9 @@ scatter(mu, mu*0, 'r*')
 hold off
 title('PDF of histogram (blue) and PDF of Gaussian model (black)')
 
-figure(IMG_FIGURE)
-imshow(img/MAX_DIST);
-title('Normalized Image')
+% figure(IMG_FIGURE)
+% imshow(img/MAX_DIST);
+% title('Normalized Image')
 
 time = tic();
 figure(CLUSTERS_FIGURE)
@@ -171,16 +173,60 @@ disp(['Clustering completed in ' num2str(elapsedtime) ' seconds.'])
 t1 = toc(total_time);
 disp(['Finished. Total time = ' num2str(t1) ' seconds.'])
 
+%== Now, find the posterior probability of each component for each pixel ==%
 
+[PosteriorProbs,nlogl]=posterior(gmdist,img(:));
+PosteriorProbImg = reshape(PosteriorProbs, [size(img,1), size(img,2), k]);
+%== Perform template matching on each component ==%
 
-k = npeaks;
+for icomponent = 1:k
+    thiscomponent = PosteriorProbImg(:,:,icomponent);
+    
+    % Generate the template
+    template = gentemplate(mu(icomponent));
+    
+%     % Visualize the current component
+%     imshow(thiscomponent/max(thiscomponent(:)))
+%     hold on
+%     imshow(template)
+%     hold off
+%     pause
+    
+    F = thiscomponent;
+    T = template;
+    
+    % display frame and template
+    figure(IMG_FIGURE)
+%     subplot(121),imshow(F),title('Image');
+    subplot(122)
+    hold on
+    imshow(F)
+    imshow(T),title('Template');
+    hold off
+    
+    % correlation matching
+    [corrScore, boundingBox] = corrMatching(F,T,.6);
+    
+    % show results
+    figure(CORR_FIGURE)
+    imagesc(abs(corrScore)),axis image, axis off, colorbar,
+    title('Corr Measurement Space')
+    
+    bY = [boundingBox(1),boundingBox(1)+boundingBox(3),boundingBox(1)+boundingBox(3),boundingBox(1),boundingBox(1)];
+    bX = [boundingBox(2),boundingBox(2),boundingBox(2)+boundingBox(4),boundingBox(2)+boundingBox(4),boundingBox(2)];
+    figure(IMG_FIGURE)
+    subplot(121)
+    imshow(F),line(bX,bY),title('Detected Area');
+    pause
+end
+
+return
 
 % Calculate data cost per cluster
 Dc = zeros([sz(1:2) k],'single');
-[P,nlogl]=posterior(gmdist,img(:));
-nlogP = -GC_DATA_WEIGHT*log(P+.0001); %NOTE: Adding a small fraction to P to prevent log(0)
+nlogP = -log(PosteriorProbs+.0001); %NOTE: Adding a small fraction to P to prevent log(0)
 for ci=1:k
-    Dc(:,:,ci) = reshape(nlogP(:,ci),sz(1:2));
+    Dc(:,:,ci) = GC_DATA_WEIGHT*reshape(nlogP(:,ci),sz(1:2));
 end
 
 % smoothness term:
