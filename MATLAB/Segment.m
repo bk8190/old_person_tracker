@@ -1,28 +1,37 @@
-% function Segment(in_img)
+function Segment(in_img)
 
-% if ~exist('in_img','var')
+if ~exist('in_img','var')
     run_as_script = true
     clear all;close all;
     [in_img ~] = LoadData('images/',12);
-% end
+end
 
 total_time = tic();
 
 img = imresize(in_img, .3, 'nearest');
 
 MAX_DIST = 7;
-N_GAUSSIANS= 13;
 HIST_NBINS = 80;
 
 IMG_FIGURE = 1;
 HIST_FIGURE = 2;
+GAUS_APPROX_FIGURE = 6;
 GMDIST_FIGURE = 3;
 CLUSTERS_FIGURE = 4;
 GRAPHCUT_FIGURE = 5;
+GRAPHCUT_SPATIAL_FIGURE = 6;
+
+PDF_APPROX_RESOLUTION = .03;
+PEAKS_MIN_DISTANCE = 5;
+SIGMA_FACTOR = 1/(4^2);
+GC_DATA_WEIGHT = .6;
 
 % Remove NAN values
 batman = isnan(img);
 img(batman) = MAX_DIST;
+
+% Median filter to remove noise
+img = medfilt2(img, [4 4]);
 
 sz = size(img);
 
@@ -32,22 +41,9 @@ notatmax = img( img<(MAX_DIST-.05) );
 
 % Normalize the histogram
 hist_dx = MAX_DIST/HIST_NBINS
-counts = counts/(sum(counts)*hist_dx); 
+counts = counts/(sum(counts)*hist_dx);
 
 samples = imresize(img, .3, 'nearest');
-% figure(1)
-% imshow(samples/MAX_DIST)
-% pause;
-% samples = samples( samples<(MAX_DIST-.05) );
-% [samplecounts samplebins] = hist(samples, HIST_NBINS);
-% samplecounts = samplecounts/(sum(samplecounts)*hist_dx)
-
-disp('Fitting distribution')
-time = tic();
-options = statset('MaxIter', 500, 'Display', 'final');
-gmdist = gmdistribution.fit(samples(:), N_GAUSSIANS, 'CovType', 'diagonal', 'Regularize', .001, 'Options', options);
-elapsedtime = toc(time);
-disp(['EM completed in ' num2str(elapsedtime) ' seconds.'])
 
 
 %== Find histogram statistics with peaks and valleys ==%
@@ -55,16 +51,16 @@ disp(['EM completed in ' num2str(elapsedtime) ' seconds.'])
 % plot(samplebins,samplecounts, 'r-')
 
 % Approximate the PDF of the data
-[f xi] = ksdensity(notatmax, 'npoints', 200, 'width', .04);
+[f xi] = ksdensity(notatmax, 'npoints', 200, 'width', PDF_APPROX_RESOLUTION);
 
 % Find peaks
-[~, peaklocs] = findpeaks(f, 'MINPEAKDISTANCE', 7);
+[~, peaklocs] = findpeaks(f, 'MINPEAKDISTANCE', PEAKS_MIN_DISTANCE);
 
 % Assume valleys are halfway between peaks
 npeaks = length(peaklocs);
 valleylocs = zeros(npeaks-1, 1, 'int32');
 for ipeak = 1:npeaks-1
-    valleylocs(ipeak) = .5*(peaklocs(ipeak) + peaklocs(ipeak+1));    
+    valleylocs(ipeak) = .5*(peaklocs(ipeak) + peaklocs(ipeak+1));
 end
 
 % Refine the valley locations using gradient decent until they reach either
@@ -76,7 +72,7 @@ for ival = 1:length(valleylocs)
     while newloc > peaklocs(ival) && f(newloc-1)<f(newloc)
         newloc = newloc-1;
     end
-
+    
     % Try to move it to the right
     while newloc < peaklocs(ival+1) && f(newloc+1)<f(newloc)
         newloc = newloc+1;
@@ -87,22 +83,23 @@ end
 
 % Show the histogram, approximated PDF, and peak/valley locations
 figure(HIST_FIGURE);
+clf
 hold on
-plot(bins,counts, 'k-')
+plot(bins,counts, 'b-')
 plot(xi,f, 'g-')
 plot(xi(peaklocs), f(peaklocs)+.01, 'k^', 'markerfacecolor',[0 1 0]);
 plot(xi(valleylocs), f(valleylocs)-.01, 'k^', 'markerfacecolor',[1 0 0]);
-title('Histogram (blue) and approx. PDF (black) with local extrema')
+title('Histogram (blue) and approx. PDF (green) with local extrema labeled')
+hold off
 
 % Now, divide up the data and train gaussians to each peak.
 indices = 1:length(xi);
 
 mu    = zeros(npeaks, 1, 'single');
-sigma = zeros(npeaks, 1, 'single');
+sigma = zeros(1, 1, npeaks, 'single');
 p     = zeros(1, npeaks, 'single');
 
-dx = xi(2)-xi(1)
-
+dx = xi(2)-xi(1);
 for igroup = 1:npeaks
     % Get the data from this group (special cases for first and last)
     if igroup == 1
@@ -119,66 +116,82 @@ for igroup = 1:npeaks
     % Numerical integration to find the probability of this group
     p(igroup) = sum(group_f * dx);
     
+    % Normalize so that the PDF of this group sums to 1
     norm_group_f = group_f/(p(igroup));
     
     % First moment is the mean
     mu(igroup) = sum(group_x .* norm_group_f .* dx);
     
     % Second central moment is the variance
-    sigma(igroup) = sum( (norm_group_f-mu
+    sigma(1,1,igroup) = sum( norm_group_f.*(group_x-mu(igroup)).^2 )*SIGMA_FACTOR;
     
-    figure(8)
-    clf
-    hold on
-    plot(group_x,norm_group_f)
-    line([mu(igroup), mu(igroup)], [min(norm_group_f), max(norm_group_f)]);
-    hold off
+    % Plot the current component along with its gaussian approximation
+    %     Y = normpdf(xi, mu(igroup), sigma(igroup));
     
-    pause
+    %     figure(GAUS_APPROX_FIGURE)
+%     if igroup == 1
+%         clf
+%     end
+    %     hold on
+    %     ylim([0 1])
+    %     plot(group_x,group_f, 'b-')
+    %     plot(xi,p(igroup)*Y, 'r-')
+    %     line([mu(igroup), mu(igroup)], [min(group_f), max(group_f)]);
+    %     title(['Group ', num2str(igroup), ', individual gaussian components'])
+    %     hold off
+    
 end
 
+gmdist = gmdistribution(mu, sigma, p)
 
-p
-
-% figure(GMDIST_FIGURE)
-% x = (1:.01:MAX_DIST)';
-% p = pdf(gmdist,x);
-% plot(x,p, 'k-');
-% title('PDF of Gaussian model')
+figure(GMDIST_FIGURE)
+clf
+gaus_x = (0:.01:MAX_DIST)';
+gaus_pdf = pdf(gmdist,gaus_x);
+hold on
+plot(gaus_x,gaus_pdf, 'k-');
+plot(bins,counts, 'b-')
+scatter(mu, mu*0, 'r*')
+hold off
+title('PDF of histogram (blue) and PDF of Gaussian model (black)')
 
 figure(IMG_FIGURE)
 imshow(img/MAX_DIST);
-title('Image')
+title('Normalized Image')
 
-% time = tic();
-% figure(CLUSTERS_FIGURE)
-% idx = cluster(gmdist, img(:));
-% idx = reshape(idx, size(img,1), size(img,2));
-% imshow(label2rgb(idx, 'lines'))
-% title('Clusters detected from EM')
-% elapsedtime = toc(time);
-% disp(['Clustering completed in ' num2str(elapsedtime) ' seconds.'])
+time = tic();
+figure(CLUSTERS_FIGURE)
+idx = cluster(gmdist, img(:));
+idx = reshape(idx, size(img,1), size(img,2));
+imshow(label2rgb(idx, 'lines'))
+title('Clusters detected from EM')
+elapsedtime = toc(time);
+disp(['Clustering completed in ' num2str(elapsedtime) ' seconds.'])
 
-return
+t1 = toc(total_time);
+disp(['Finished. Total time = ' num2str(t1) ' seconds.'])
 
 
-k = N_GAUSSIANS;
+
+k = npeaks;
 
 % Calculate data cost per cluster
-Dc = zeros([sz(1:2) N_GAUSSIANS],'single');
+Dc = zeros([sz(1:2) k],'single');
 [P,nlogl]=posterior(gmdist,img(:));
-nlogP = -.3*log(P);
-for ci=1:N_GAUSSIANS
+nlogP = -GC_DATA_WEIGHT*log(P+.0001); %NOTE: Adding a small fraction to P to prevent log(0)
+for ci=1:k
     Dc(:,:,ci) = reshape(nlogP(:,ci),sz(1:2));
 end
 
-
-% smoothness term: 
+% smoothness term:
 % constant part
 Sc = ones(k) - eye(k);
 % spatialy varying part
-% [Hc Vc] = gradient(imfilter(rgb2gray(im),fspecial('gauss',[3 3]),'symmetric'));
-[Hc Vc] = SpatialCues(img);
+[Hc Vc] = gradient(imfilter(img,fspecial('gauss',[3 3]),'symmetric'));
+% [Hc Vc] = SpatialCues(img);
+figure(GRAPHCUT_SPATIAL_FIGURE);
+imshow(abs(max(Hc,Vc)));
+title('Spatial gradient');
 
 time = tic();
 gch = GraphCut('open', Dc, 10*Sc, exp(-Vc*5), exp(-Hc*5));
@@ -189,13 +202,15 @@ disp(['GraphCut completed in ' num2str(elapsedtime) ' seconds.'])
 
 % show results
 figure(GRAPHCUT_FIGURE)
-% imshow(img/MAX_DIST);
-% hold on;
-% colormap gray
+clf
+imshow(img/MAX_DIST);
+hold on;
+colormap gray
 % PlotLabels(L);
 labelimg = label2rgb(L);
 imshow(labelimg);
 title('Results of graphcut')
+hold off
 
 total_time = toc(total_time);
 disp(['Finished. Total time = ' num2str(total_time) ' seconds.'])
