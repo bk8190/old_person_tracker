@@ -47,13 +47,17 @@ stdTemplate = std(templateGray(:));
 corrScore = (corrPartI-corrPartII)./(stdFrame.*stdTemplate);
 
 %% 3. finding most likely region
+
+nans = isinf(corrScore) | isnan(corrScore);
+corrScore(nans) = 0;
+
 [maxVal,maxIdx] = max(corrScore(:));
 [maxR, maxC] = ind2sub([size(corrScore,1),size(corrScore,2)],maxIdx);
-
-if isinf(maxVal) || isnan(maxVal)
-    maxVal = 0;
-    %     disp('Error: infinite/NaN correlation detected')
-end
+% 
+% if isinf(maxVal) || isnan(maxVal)
+%     maxVal = 0;
+%     %     disp('Error: infinite/NaN correlation detected')
+% end
 
 %% 4. hypothesis test
 if ~exist('threshC','var')
@@ -63,5 +67,5 @@ disp(['Max correlation: ', num2str(maxVal)])
 if maxVal>=threshC
     boundingBox(1,:) = [max(1,maxR-round(templateHeight/2)), max(1,maxC-round(templateWidth/2)), templateHeight, templateWidth];
 else
-    boundingBox(1,:) = 0*[max(1,maxR-round(templateHeight/2)), max(1,maxC-round(templateWidth/2)), templateHeight, templateWidth];
+    boundingBox(1,:) = [0, 0, 0, 0];
 end

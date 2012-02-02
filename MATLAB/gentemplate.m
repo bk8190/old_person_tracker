@@ -2,7 +2,9 @@ function [template] = gentemplate(distance, angle)
 % "distance" is the distance from the camera.
 % "angle"   is the rotation of the shoulders (0-90 degrees)
 
-if ~exist('distance','var')
+run_as_script = ~exist('distance','var');
+
+if run_as_script
     clear all;close all;
     distance = 1.0;
     angle = 0;

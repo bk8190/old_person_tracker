@@ -1,4 +1,4 @@
-function Segment(in_img)
+% function Segment(in_img)
 
 if ~exist('in_img','var')
     run_as_script = true
@@ -131,9 +131,9 @@ for igroup = 1:k
     %     Y = normpdf(xi, mu(igroup), sigma(igroup));
     
     %     figure(GAUS_APPROX_FIGURE)
-%     if igroup == 1
-%         clf
-%     end
+    %     if igroup == 1
+    %         clf
+    %     end
     %     hold on
     %     ylim([0 1])
     %     plot(group_x,group_f, 'b-')
@@ -144,7 +144,7 @@ for igroup = 1:k
     
 end
 
-gmdist = gmdistribution(mu, sigma, p)
+gmdist = gmdistribution(mu, sigma, p);
 
 figure(GMDIST_FIGURE)
 clf
@@ -179,47 +179,88 @@ disp(['Finished. Total time = ' num2str(t1) ' seconds.'])
 PosteriorProbImg = reshape(PosteriorProbs, [size(img,1), size(img,2), k]);
 %== Perform template matching on each component ==%
 
+points = []
+
 for icomponent = 1:k
+    disp(['Component ', num2str(icomponent)])
     thiscomponent = PosteriorProbImg(:,:,icomponent);
     
     % Generate the template
-    template = gentemplate(mu(icomponent));
+    ntemplates = 2;
+    templates = gentemplates(ntemplates, mu(icomponent));
     
-%     % Visualize the current component
-%     imshow(thiscomponent/max(thiscomponent(:)))
-%     hold on
-%     imshow(template)
-%     hold off
-%     pause
+    %     % Visualize the current component
+    %     imshow(thiscomponent/max(thiscomponent(:)))
+    %     hold on
+    %     imshow(template)
+    %     hold off
+    %     pause
     
-    F = thiscomponent;
-    T = template;
-    
-    % display frame and template
-    figure(IMG_FIGURE)
-%     subplot(121),imshow(F),title('Image');
-    subplot(122)
-    hold on
-    imshow(F)
-    imshow(T),title('Template');
-    hold off
-    
-    % correlation matching
-    [corrScore, boundingBox] = corrMatching(F,T,.6);
-    
-    % show results
-    figure(CORR_FIGURE)
-    imagesc(abs(corrScore)),axis image, axis off, colorbar,
-    title('Corr Measurement Space')
-    
-    bY = [boundingBox(1),boundingBox(1)+boundingBox(3),boundingBox(1)+boundingBox(3),boundingBox(1),boundingBox(1)];
-    bX = [boundingBox(2),boundingBox(2),boundingBox(2)+boundingBox(4),boundingBox(2)+boundingBox(4),boundingBox(2)];
-    figure(IMG_FIGURE)
-    subplot(121)
-    imshow(F),line(bX,bY),title('Detected Area');
-    pause
+    for itemplate = 1:ntemplates
+        
+        I = thiscomponent;
+        T = templates{itemplate};
+        
+        corr = conv2(I-.5, flipud(T)-.5, 'same')/numel(T);
+        
+        % Find maximum correspondence in I_SDD image
+        maxcorr = max(corr(:));
+        disp(['Maximum corrlation: ', num2str(maxcorr)])
+        [x,y]=find(corr==maxcorr);
+        if maxcorr > .17
+             points = [points; x, y, mu(icomponent)]
+        end
+        
+        % Show result
+%         figure(CORR_FIGURE)
+%         clf
+%         subplot(2,2,1), imshow(I); hold on; title('Result')
+%         if maxcorr > .17
+%              plot(y,x,'r*');\
+%         end
+%         subplot(2,2,2), imshow(T); title('template');
+%         subplot(2,2,3), imshow(corr); title('Correlation Matching');
+        
+%         [count bins] = hist(corr(:),100);
+%         % num = numel(idata.rawcorr);
+%         plot(bins,count)
+        %         xlim([0 1])
+        %         ylim([0 1])
+        %         % display frame and template
+        %         figure(IMG_FIGURE)
+        %         %     subplot(121),imshow(F),title('Image');
+        %         subplot(122)
+        %         hold on
+        %         imshow(F)
+        %         imshow(T),title('Template');
+        %         hold off
+        %
+        %         % correlation matching
+        %         [corrScore, boundingBox] = corrMatching(F,T,.6);
+        %
+        %         % show results
+        %         figure(CORR_FIGURE)
+        %         imagesc(abs(corrScore)),axis image, axis off, colorbar,
+        %         title('Corr Measurement Space')
+        %
+        %         bY = [boundingBox(1),boundingBox(1)+boundingBox(3),boundingBox(1)+boundingBox(3),boundingBox(1),boundingBox(1)];
+        %         bX = [boundingBox(2),boundingBox(2),boundingBox(2)+boundingBox(4),boundingBox(2)+boundingBox(4),boundingBox(2)];
+        %         figure(IMG_FIGURE)
+        %         subplot(121)
+        %         imshow(F),line(bX,bY),title('Detected Area');
+        %         keyboard
+    end
 end
 
+        figure(CORR_FIGURE_2)
+        imshow(img/MAX_DIST)
+        hold on
+        for i = 1:length(points)
+            x = points(i,1);
+            y = points(i,2);
+            plot(y,x,'r*');
+        end
+        hold off
 return
 
 % Calculate data cost per cluster
